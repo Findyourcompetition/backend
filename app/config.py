@@ -1,8 +1,9 @@
 from pydantic_settings import BaseSettings
+import os
 
 class Settings(BaseSettings):
-    MONGODB_URL: str = "mongodb://localhost:27017/fyc"
-    DATABASE_NAME: str = "fyc"
+    MONGOB_URL: str = os.environ.get("MONGODB_URL", "mongodb://localhost:27017/fyc")
+    DATABASE_NAME: str = "fyc_prod_db"
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
