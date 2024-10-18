@@ -1,5 +1,7 @@
 import httpx
+import requests
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
 
 async def scrape_competitor_data(website: str) -> str:
     if not website:
@@ -27,7 +29,7 @@ async def scrape_competitor_data(website: str) -> str:
         text_content = main_content.get_text(strip=True)[:500]  # Limit to 500 characters
     else:
         text_content = soup.get_text(strip=True)[:500]
-    
+        
     scraped_data = f"""
     Title: {title}
     Description: {description}
@@ -35,4 +37,31 @@ async def scrape_competitor_data(website: str) -> str:
     """
     
     return scraped_data
+
+
+
+async def scrape_logo(website: str) -> str:
+    try:
+        response = requests.get(website, timeout=10)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Look for common logo locations
+        potential_logos = soup.select('img[src*=logo], a.logo img, .logo img, #logo img')
+        
+        if potential_logos:
+            logo_src = potential_logos[0].get('src')
+            if logo_src:
+                return urljoin(website, logo_src)
+            
+        # If no logo found, return a default or empty string
+        return ""
+    except Exception as e:
+        print(f"Error scraping logo from {website}: {str(e)}")
+        return ""
+
+
+
+
+
 
