@@ -50,6 +50,8 @@ def lookup_competitor_ai(name_or_url: str) -> CompetitorList:
     prompt = f"""
         Given the following name or link about a business, return the top 5 competitors of the business, including the business as the first item.
         Name or URL: {name_or_url}
+
+        Make sure you provide only valid logo urls 
         """
     response = lookup_competitor_openai(prompt)
     return response
