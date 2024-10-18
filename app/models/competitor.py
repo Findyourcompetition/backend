@@ -4,7 +4,7 @@ from typing import Optional, List
 class SocialMedia(BaseModel):
     facebook: Optional[str]
     twitter: Optional[str]
-    linkedin: Optional[str]
+    youtube: Optional[str]
     instagram: Optional[str]
 
 

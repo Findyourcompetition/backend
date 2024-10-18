@@ -39,6 +39,8 @@ async def find_competitors_ai(business_description: str, location: str) -> Compe
         Given the following business description and location, identify the top 6 competitors:
         Business: {business_description}
         Location: {location}
+
+        Make sure you provide only valid logo urls
         """
     response = await find_competitors_openai(prompt)
     return response
