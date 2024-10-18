@@ -40,7 +40,7 @@ async def find_competitors_ai(business_description: str, location: str) -> Compe
         Business: {business_description}
         Location: {location}
 
-        Make sure you provide only valid logo urls
+        Make sure you provide the favicon of the competitor's site as the logo
         """
     response = await find_competitors_openai(prompt)
     return response
@@ -51,7 +51,7 @@ def lookup_competitor_ai(name_or_url: str) -> CompetitorList:
         Given the following name or link about a business, return the top 5 competitors of the business, including the business as the first item.
         Name or URL: {name_or_url}
 
-        Make sure you provide only valid logo urls 
+        Make sure you provide the favicon of the competitor's site as the logo
         """
     response = lookup_competitor_openai(prompt)
     return response
