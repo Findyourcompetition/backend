@@ -10,11 +10,14 @@ from app.services.auth import (
 
 router = APIRouter()
 
-@router.post("/register", response_model=User)
+@router.post("/register")
 async def register(user: UserCreate):
-    return await create_user(user)
+    new_user = await create_user(user)
+    print(new_user)
+    access_token = create_access_token(data={"sub": new_user.email})
+    return {"access_token": access_token, "token_type": "bearer", "username": new_user.email, "id": new_user.id}
 
-@router.post("/token", response_model=Token)
+@router.post("/token")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = await authenticate_user(form_data.username, form_data.password)
     if not user:
@@ -24,7 +27,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token = create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer", "username": user.email, "id": user.id}
 
 @router.get("/me", response_model=User)
 async def read_users_me(current_user: User = Depends(get_current_user)):
