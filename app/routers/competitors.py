@@ -63,12 +63,11 @@ async def search_for_competitors(
 
 @router.post("/lookup", response_model=CompetitorList)
 async def lookup_competitor(name_or_url: str):
-    return lookup_competitor_ai(name_or_url)
+    results = await lookup_competitor_ai(name_or_url)
+    return results
 
 @router.post("/find", response_model=CompetitorList)
-async def find_competitors_with_ai(
-    find: CompetitorSearchAi, current_user: User = Depends(get_current_user)
-):
+async def find_competitors_with_ai(find: CompetitorSearchAi):
     results = await find_competitors_ai(find.business_description, find.location)
     return results
     

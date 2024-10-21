@@ -69,7 +69,7 @@ async def lookup_competitor_ai(name_or_url: str) -> CompetitorList:
 
         If you cannot find the valid logo url for the competitor, make sure you provide the cometitor's website favicon.
         """
-    response = lookup_competitor_openai(prompt)
+    response = await lookup_competitor_openai(prompt)
     tasks = [process_competitor(competitor) for competitor in response.competitors] 
     updated_competitors = await asyncio.gather(*tasks)              
     response.competitors = updated_competitors

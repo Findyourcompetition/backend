@@ -42,7 +42,8 @@ async def find_competitors_openai(prompt: str) -> CompetitorList:
     await insert_competitors(response.competitors)
     return response
 
-def lookup_competitor_openai(prompt: str) -> CompetitorList:
+
+async def lookup_competitor_openai(prompt: str) -> CompetitorList:
     response = openai_client.chat.completions.create(
         model="gpt-4o",
         messages=[
