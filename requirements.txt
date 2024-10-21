@@ -8,6 +8,7 @@ bcrypt==4.2.0
 beautifulsoup4==4.12.3
 certifi==2024.8.30
 cffi==1.17.1
+charset-normalizer==3.4.0
 click==8.1.7
 cryptography==43.0.1
 distro==1.9.0
@@ -41,6 +42,7 @@ pymongo==4.9.1
 python-dotenv==1.0.1
 python-jose==3.3.0
 python-multipart==0.0.10
+requests==2.32.3
 rich==13.8.1
 rsa==4.9
 shellingham==1.5.4
@@ -52,5 +54,6 @@ tenacity==8.5.0
 tqdm==4.66.5
 typer==0.12.5
 typing_extensions==4.12.2
+urllib3==2.2.3
 uvicorn==0.30.6
 yarl==1.13.0
