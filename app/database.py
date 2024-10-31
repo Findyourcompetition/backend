@@ -8,21 +8,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Get the Redis URL and append SSL parameters for secure connection
+redis_url = os.environ["REDIS_URL"]
+
 # Sync Redis client
-redis_client = redis.Redis.from_url(
-    os.environ["REDIS_URL"],
-    ssl=True,
-    ssl_cert_reqs=None
-)
+redis_client = redis.Redis.from_url(redis_url + "?ssl_cert_reqs=none")
 
 # Async Redis client
-redis_async = aioredis.from_url(
-    os.environ["REDIS_URL"],
-    ssl=True,
-    ssl_cert_reqs=None,
-    decode_responses=True,
-    encoding="utf-8"
-)
+redis_async = aioredis.from_url(redis_url + "?ssl_cert_reqs=none", decode_responses=True, encoding="utf-8")
+
 
 # Existing MongoDB setup
 client = AsyncIOMotorClient(settings.MONGODB_URL)
