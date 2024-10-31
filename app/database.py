@@ -8,12 +8,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Sync Redis client (keep your existing one)
-redis_client = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://localhost"))
+redis_client = redis.Redis.from_url(os.environ.get("REDIS_URL"))
 
 # Add async Redis client with a different name
 redis_async = Redis.from_url(
-    os.environ.get("REDIS_URL", "redis://localhost"),
+    os.environ.get("REDIS_URL"),
     decode_responses=True,
     encoding="utf-8"
 )
