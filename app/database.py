@@ -8,11 +8,18 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-redis_client = redis.Redis.from_url(os.environ.get("REDIS_URL"))
+# Sync Redis client
+redis_client = redis.Redis.from_url(
+    os.environ["REDIS_URL"],
+    ssl=True,
+    ssl_cert_reqs=None
+)
 
-# Add async Redis client with a different name
-redis_async = Redis.from_url(
-    os.environ.get("REDIS_URL"),
+# Async Redis client
+redis_async = aioredis.from_url(
+    os.environ["REDIS_URL"],
+    ssl=True,
+    ssl_cert_reqs=None,
     decode_responses=True,
     encoding="utf-8"
 )
