@@ -1,6 +1,5 @@
-from app.models.competitor import Competitor, CompetitorList
+from app.models.competitor import Competitor, CompetitorList, CompetitorBaseList, SingleCompetitorSearchResult
 from app.utils.data_scraper import scrape_competitor_data, scrape_logo
-from app.services.competitor import insert_competitors
 from ai_integrations.chat_request import send_openai_request, find_competitors_openai, lookup_competitor_openai
 from typing import List
 import asyncio
@@ -31,46 +30,30 @@ async def generate_competitor_insights(competitor: Competitor) -> list[str]:
     
     # Parse the response into a list of insights
     insights = response.split('\n')
-    insights = [insight.strip() for insight in insights if insight.strip()]
+    insxights = [insight.strip() for insight in insights if insight.strip()]
     
     return insights[:5]  # Return up to 5 insights
 
 
-async def process_competitor(competitor: Competitor) -> Competitor:
-    if competitor.website:
-        logo_url = await scrape_logo(competitor.website)
-        if logo_url:
-            competitor.logo = logo_url
-    return competitor
-
 async def find_competitors_ai(business_description: str, location: str) -> CompetitorList:
     prompt = f"""
-        Given the following business description and location, identify the top 6 competitors:
+        Given the following business description and location, identify the top 12 competitors:
         Business: {business_description}
         Location: {location}
 
-        If you cannot find the valid logo url for the competitor, make sure you provide the cometitor's website favicon.
+        Return an empty string ("") in the logo field.
         """
     response = await find_competitors_openai(prompt)
-    # Process each competitor to scrape their logo
-    tasks = [process_competitor(competitor) for competitor in response.competitors]
-    updated_competitors = await asyncio.gather(*tasks)
-    
-    response.competitors = updated_competitors
-    await insert_competitors(response.competitors)
-    return response
+    competitors = [Competitor(**comp.model_dump()) for comp in response.competitors]
+    return competitors
 
-
-
-async def lookup_competitor_ai(name_or_url: str) -> CompetitorList:
+async def lookup_competitor_ai(name_or_url: str) -> SingleCompetitorSearchResult:
     prompt = f"""
-        Given the following name or link about a business, return the top 5 competitors of the business, including the business as the first item.
+        Given the following name or website about a business, return the top 12 competitors of the business, including the business as the first item. Make sure to include the country(ies) in which the competitor operate, and instead of "global" for countries that operate globally, list the top 10 countries they operate in.
         Name or URL: {name_or_url}
 
-        If you cannot find the valid logo url for the competitor, make sure you provide the cometitor's website favicon.
+        Return an empty string ("") in the logo field.
         """
     response = await lookup_competitor_openai(prompt)
-    tasks = [process_competitor(competitor) for competitor in response.competitors] 
-    updated_competitors = await asyncio.gather(*tasks)              
-    response.competitors = updated_competitors
-    return response
+    return response.competitors
+

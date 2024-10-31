@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import auth, competitors
-from app.database import init_db
+from app.database import init_db, close_db
 from app.config import settings
 import logging
 
@@ -28,9 +28,14 @@ async def startup_event():
     logger.info(f"MongoDB URL: {settings.MONGODB_URL}")
     await init_db()
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("Shutting down application...")
+    await close_db()
+
 @app.get("/")
 async def root():
-    return {"message": "Welcome to FYC Product BackendAPI"}
+    return {"message": "Welcome to FYC Product Backend API"}
 
 if __name__ == "__main__":
     import uvicorn

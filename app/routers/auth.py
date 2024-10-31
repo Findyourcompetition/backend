@@ -1,14 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
-from app.models.user import UserCreate, User, Token
+from app.models.user import UserCreate, User, Token, PasswordResetRequest, PasswordResetResponse
 from app.services.auth import (
     create_user,
     authenticate_user,
     create_access_token,
     get_current_user,
 )
+from app.services.email_service import send_reset_email
+from app.services.token_service import generate_reset_token
+import logging
+
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
 
 @router.post("/register")
 async def register(user: UserCreate):
@@ -32,3 +38,34 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 @router.get("/me", response_model=User)
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+@router.post("/forgot-password", response_model=PasswordResetResponse)
+async def forgot_password(
+    request: PasswordResetRequest,
+    background_tasks: BackgroundTasks
+):
+    """Handle forgot password requests."""
+    try:
+        # Generate reset token
+        reset_token = await generate_reset_token(request.email)
+        
+        # Send email in background
+        background_tasks.add_task(
+            send_reset_email,
+            request.email,
+            reset_token
+        )
+        
+        logger.info(f"Password reset initiated for {request.email}")
+        
+        return PasswordResetResponse(
+            message="If an account exists with this email, "
+                   "you will receive password reset instructions."
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in forgot password flow: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error processing password reset request"
+        )

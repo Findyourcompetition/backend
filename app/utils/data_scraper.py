@@ -60,8 +60,3 @@ async def scrape_logo(website: str) -> str:
         print(f"Error scraping logo from {website}: {str(e)}")
         return ""
 
-
-
-
-
-
