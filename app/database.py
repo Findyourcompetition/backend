@@ -1,8 +1,8 @@
 # app/database.py
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.config import settings
+import redis.asyncio as aioredis
 import redis
-from redis.asyncio import Redis
 import os
 import logging
 
