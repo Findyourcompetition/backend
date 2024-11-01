@@ -111,9 +111,8 @@ def update_task_status(task_id: str, status: str, result=None, error=None):
                 raise
             asyncio.sleep(retry_delay * (attempt + 1))
 
-
-async def store_search_results(competitors, search_id):
-    """Store search results with logos"""
+def store_search_results_sync(competitors, search_id):
+    """Synchronous version of store_search_results"""
     processed_competitors = []
     competitor_collection = get_collection("competitors")
     
@@ -128,11 +127,8 @@ async def store_search_results(competitors, search_id):
                     if cached_logo:
                         logo_url = cached_logo.decode() if isinstance(cached_logo, bytes) else cached_logo
                     else:
-                        logo_url = await fetch_logo_url(competitor.website)
-                        if logo_url:
-                            redis_client.set(f"logo:{competitor.website}", logo_url, ex=86400)
-                        else:
-                            logo_url = "default_logo_url"
+                        # Synchronous fallback for logo
+                        logo_url = "default_logo_url"
                     competitor_dict['logo'] = logo_url
                 except Exception as e:
                     logger.error(f"Error fetching logo for {competitor.website}: {str(e)}")
@@ -143,11 +139,8 @@ async def store_search_results(competitors, search_id):
             unique_id = str(uuid4())
             competitor_dict['_id'] = unique_id
             
-            await competitor_collection.update_one(
-                {"name": competitor.name, "search_id": search_id},
-                {"$set": competitor_dict},
-                upsert=True
-            )
+            # Synchronous insert
+            competitor_collection.insert_one(competitor_dict)
             processed_competitors.append(competitor_dict)
         except Exception as e:
             logger.error(f"Error processing competitor: {str(e)}")
@@ -167,7 +160,7 @@ def process_competitor_search(task_type: str, params: dict, task_id: str):
     try:
         update_task_status(task_id, "processing")
         
-        # Synchronous wrapper for async functions
+        # Single async operation for getting competitors
         def run_async(coro):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -176,7 +169,7 @@ def process_competitor_search(task_type: str, params: dict, task_id: str):
             finally:
                 loop.close()
         
-        # Get competitors
+        # Get competitors (only async operation)
         if task_type == "competitor_search":
             competitors = run_async(find_competitors_ai(
                 params["business_description"],
@@ -187,8 +180,8 @@ def process_competitor_search(task_type: str, params: dict, task_id: str):
                 params["name_or_url"]
             ))
         
-        # Process and store results
-        result = run_async(store_search_results(competitors, search_id))
+        # Process and store results synchronously
+        result = store_search_results_sync(competitors, search_id)
         update_task_status(task_id, "completed", result=result)
         return result
         
