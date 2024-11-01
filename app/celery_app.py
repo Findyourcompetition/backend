@@ -200,7 +200,6 @@ async def _process_search(task_type: str, params: dict, task_id: str):
 @celery_app.task(name='process_competitor_search')
 def process_competitor_search(task_type: str, params: dict, task_id: str):
     """Celery task to process competitor searches"""
-    # Create new event loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
@@ -213,6 +212,11 @@ def process_competitor_search(task_type: str, params: dict, task_id: str):
         update_task_status(task_id, "failed", error=str(exc))
         raise
     finally:
-        # Clean up the loop only after all work is done
-        loop.stop()
-        loop.close()
+        # Don't close the loop until all tasks are done
+        try:
+            pending = asyncio.all_tasks(loop)
+            loop.run_until_complete(asyncio.gather(*pending))
+        except Exception as e:
+            logger.error(f"Error cleaning up tasks: {e}")
+        finally:
+            loop.close()

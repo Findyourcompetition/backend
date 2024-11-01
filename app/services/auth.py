@@ -19,13 +19,15 @@ async def create_user(user: UserCreate):
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    user_dict = user.model_dump()    
+    user_dict = user.model_dump()
+    
     # Handle password for email users
     if user.auth_provider == "email":
         if not user.password:
             raise HTTPException(status_code=400, detail="Password required for email registration")
         hashed_password = pwd_context.hash(user.password)
         user_dict["hashed_password"] = hashed_password
+        user_dict.pop('password', None)
     
     result = await users.insert_one(user_dict)
     created_user = await users.find_one({"_id": result.inserted_id})
