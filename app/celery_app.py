@@ -193,7 +193,10 @@ async def _process_search(task_type: str, params: dict, task_id: str):
 @celery_app.task(name='process_competitor_search')
 def process_competitor_search(task_type: str, params: dict, task_id: str):
     """Celery task to process competitor searches"""
-    # Create and set event loop at the start
+    # Set event loop policy for Unix-like systems
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+    
+    # Create and set event loop
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
@@ -208,7 +211,10 @@ def process_competitor_search(task_type: str, params: dict, task_id: str):
     try:
         return loop.run_until_complete(run_task())
     finally:
-        # Ensure the loop is closed only after everything is done
-        if not loop.is_closed():
-            loop.run_until_complete(loop.shutdown_asyncgens())
+        try:
+            pending = asyncio.all_tasks(loop)
+            loop.run_until_complete(asyncio.gather(*pending))
+        except Exception as e:
+            logger.error(f"Error cleaning up tasks: {e}")
+        finally:
             loop.close()
