@@ -1,4 +1,3 @@
-# app/services/background_tasks.py
 from typing import Dict, Any, Optional
 import json
 from datetime import datetime
