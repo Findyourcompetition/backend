@@ -117,15 +117,11 @@ async def store_search_results(competitors, search_id):
     processed_competitors = []
     competitor_collection = get_collection("competitors")
     
-    # Get current event loop
-    loop = asyncio.get_event_loop()
-    
     for competitor in competitors:
         try:
             competitor_dict = competitor.dict(by_alias=True)
             competitor_dict['search_id'] = search_id
             
-            # Handle logo using the same event loop
             if competitor.website:
                 try:
                     cached_logo = redis_client.get(f"logo:{competitor.website}")
@@ -144,7 +140,6 @@ async def store_search_results(competitors, search_id):
             else:
                 competitor_dict['logo'] = "default_logo_url"
 
-            # Store in database
             unique_id = str(uuid4())
             competitor_dict['_id'] = unique_id
             
@@ -164,24 +159,36 @@ async def store_search_results(competitors, search_id):
         "total": len(processed_competitors)
     }
 
-async def _process_search(task_type: str, params: dict, task_id: str):
-    """Async helper function to process the search"""
+@celery_app.task(name='process_competitor_search')
+def process_competitor_search(task_type: str, params: dict, task_id: str):
+    """Celery task to process competitor searches"""
     search_id = str(uuid4())
     
     try:
         update_task_status(task_id, "processing")
         
+        # Synchronous wrapper for async functions
+        def run_async(coro):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                loop.close()
+        
+        # Get competitors
         if task_type == "competitor_search":
-            competitors = await find_competitors_ai(
+            competitors = run_async(find_competitors_ai(
                 params["business_description"],
                 params["location"]
-            )
+            ))
         else:  # lookup
-            competitors = await lookup_competitor_ai(
+            competitors = run_async(lookup_competitor_ai(
                 params["name_or_url"]
-            )
-
-        result = await store_search_results(competitors, search_id)
+            ))
+        
+        # Process and store results
+        result = run_async(store_search_results(competitors, search_id))
         update_task_status(task_id, "completed", result=result)
         return result
         
@@ -189,32 +196,3 @@ async def _process_search(task_type: str, params: dict, task_id: str):
         logger.error(f"Error processing search: {str(e)}")
         update_task_status(task_id, "failed", error=str(e))
         raise
-
-@celery_app.task(name='process_competitor_search')
-def process_competitor_search(task_type: str, params: dict, task_id: str):
-    """Celery task to process competitor searches"""
-    # Set event loop policy for Unix-like systems
-    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-    
-    # Create and set event loop
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    async def run_task():
-        try:
-            return await _process_search(task_type, params, task_id)
-        except Exception as exc:
-            logger.error(f"Task failed: {exc}")
-            update_task_status(task_id, "failed", error=str(exc))
-            raise
-    
-    try:
-        return loop.run_until_complete(run_task())
-    finally:
-        try:
-            pending = asyncio.all_tasks(loop)
-            loop.run_until_complete(asyncio.gather(*pending))
-        except Exception as e:
-            logger.error(f"Error cleaning up tasks: {e}")
-        finally:
-            loop.close()
