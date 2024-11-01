@@ -117,40 +117,53 @@ async def store_search_results(competitors, search_id):
     processed_competitors = []
     competitor_collection = get_collection("competitors")
     
-    for competitor in competitors:
-        competitor_dict = competitor.dict(by_alias=True)
-        competitor_dict['search_id'] = search_id
-        
-        # Handle logo
-        if competitor.website:
-            try:
-                cached_logo = redis_client.get(f"logo:{competitor.website}")
-                if cached_logo:
-                    logo_url = cached_logo
-                else:
-                    logo_url = await fetch_logo_url(competitor.website)
-                    redis_client.set(f"logo:{competitor.website}", logo_url, ex=86400)
-                competitor_dict['logo'] = logo_url
-            except Exception as e:
-                logger.error(f"Error fetching logo: {str(e)}")
-                competitor_dict['logo'] = "/placeholder-logo.png"
-        else:
-            competitor_dict['logo'] = "/placeholder-logo.png"
-
-        # Store in database
-        unique_id = str(uuid4())
-        competitor_dict['_id'] = unique_id
-        
+    # Process all competitors in parallel
+    async def process_competitor(competitor):
         try:
+            competitor_dict = competitor.dict(by_alias=True)
+            competitor_dict['search_id'] = search_id
+            
+            # Handle logo
+            if competitor.website:
+                try:
+                    cached_logo = redis_client.get(f"logo:{competitor.website}")
+                    if cached_logo:
+                        logo_url = cached_logo
+                    else:
+                        logo_url = await fetch_logo_url(competitor.website)
+                        if logo_url:
+                            redis_client.set(f"logo:{competitor.website}", logo_url, ex=86400)
+                        else:
+                            logo_url = "/placeholder-logo.png"
+                    competitor_dict['logo'] = logo_url
+                except Exception as e:
+                    logger.error(f"Error fetching logo for {competitor.website}: {str(e)}")
+                    competitor_dict['logo'] = "/placeholder-logo.png"
+            else:
+                competitor_dict['logo'] = "/placeholder-logo.png"
+
+            # Store in database
+            unique_id = str(uuid4())
+            competitor_dict['_id'] = unique_id
+            
             await competitor_collection.update_one(
                 {"name": competitor.name, "search_id": search_id},
                 {"$set": competitor_dict},
                 upsert=True
             )
-            processed_competitors.append(competitor_dict)
+            return competitor_dict
         except Exception as e:
-            logger.error(f"Error storing competitor: {str(e)}")
-            continue
+            logger.error(f"Error processing competitor: {str(e)}")
+            return None
+
+    # Process all competitors concurrently
+    results = await asyncio.gather(
+        *[process_competitor(competitor) for competitor in competitors],
+        return_exceptions=False
+    )
+    
+    # Filter out None results from failed processing
+    processed_competitors = [r for r in results if r is not None]
     
     return {
         "competitors": processed_competitors,
@@ -163,10 +176,8 @@ async def _process_search(task_type: str, params: dict, task_id: str):
     search_id = str(uuid4())
     
     try:
-        # Update task status to processing
         update_task_status(task_id, "processing")
         
-        # Perform the search
         if task_type == "competitor_search":
             competitors = await find_competitors_ai(
                 params["business_description"],
@@ -177,10 +188,7 @@ async def _process_search(task_type: str, params: dict, task_id: str):
                 params["name_or_url"]
             )
 
-        # Process and store results
         result = await store_search_results(competitors, search_id)
-        
-        # Update task status
         update_task_status(task_id, "completed", result=result)
         return result
         
@@ -189,21 +197,22 @@ async def _process_search(task_type: str, params: dict, task_id: str):
         update_task_status(task_id, "failed", error=str(e))
         raise
 
-def run_async(coro):
-    """Helper function to run async code in sync context"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
 @celery_app.task(name='process_competitor_search')
 def process_competitor_search(task_type: str, params: dict, task_id: str):
     """Celery task to process competitor searches"""
+    # Create new event loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
     try:
-        return run_async(_process_search(task_type, params, task_id))
+        # Run everything in the same loop
+        result = loop.run_until_complete(_process_search(task_type, params, task_id))
+        return result
     except Exception as exc:
         logger.error(f"Task failed: {exc}")
         update_task_status(task_id, "failed", error=str(exc))
         raise
+    finally:
+        # Clean up the loop only after all work is done
+        loop.stop()
+        loop.close()
