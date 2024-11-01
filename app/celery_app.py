@@ -15,50 +15,71 @@ from app.config import settings
 # Initialize logging
 logger = logging.getLogger(__name__)
 
+def get_redis_url():
+    """Get Redis URL from environment with fallback"""
+    redis_url = os.environ.get('REDIS_URL', settings.REDIS_URL)
+    if not redis_url:
+        raise ValueError("Redis URL not configured")
+    return redis_url
+
 def get_celery_config():
-    """Get Celery configuration with proper Redis SSL settings"""
-    redis_url = settings.REDIS_URL
-    parsed_url = urlparse(redis_url)
-    
-    config = {
-        'broker_url': redis_url,
-        'result_backend': redis_url,
-        'task_serializer': 'json',
-        'accept_content': ['json'],
-        'result_serializer': 'json',
-        'timezone': 'UTC',
-        'enable_utc': True,
-        'broker_connection_retry_on_startup': True,
-        'broker_connection_timeout': 30,
-        'broker_connection_max_retries': 10,
-        'broker_pool_limit': None,  # Disable connection pooling for Heroku
-        'worker_prefetch_multiplier': 1,  # Prevent worker from prefetching too many tasks
-        'worker_max_tasks_per_child': 50,  # Restart workers periodically to prevent memory leaks
-    }
-    
-    # Add SSL configuration for Redis if using SSL (rediss://)
-    if parsed_url.scheme == 'rediss':
-        ssl_config = {
-            'broker_use_ssl': {
-                'ssl_cert_reqs': ssl.CERT_NONE,
-                'ssl_keyfile': None,
-                'ssl_certfile': None,
-                'ssl_ca_certs': None,
-            },
-            'redis_backend_use_ssl': {
+    """Get Celery configuration with Redis as broker and backend"""
+    try:
+        redis_url = get_redis_url()
+        logger.info(f"Configuring Celery with Redis URL: {redis_url[:8]}...") # Log only the protocol part
+        
+        config = {
+            'broker_url': redis_url,
+            'result_backend': redis_url,
+            'broker_connection_retry_on_startup': True,
+            'broker_connection_timeout': 30,
+            'broker_connection_max_retries': 10,
+            'broker_pool_limit': None,
+            'task_serializer': 'json',
+            'accept_content': ['json'],
+            'result_serializer': 'json',
+            'timezone': 'UTC',
+            'enable_utc': True,
+            'worker_max_tasks_per_child': 50,
+            'worker_prefetch_multiplier': 1,
+            'task_time_limit': 300,
+            'task_soft_time_limit': 240,
+        }
+        
+        # Add SSL configuration if using secure Redis
+        if redis_url.startswith('rediss://'):
+            ssl_settings = {
                 'ssl_cert_reqs': ssl.CERT_NONE,
                 'ssl_keyfile': None,
                 'ssl_certfile': None,
                 'ssl_ca_certs': None,
             }
-        }
-        config.update(ssl_config)
-    
-    return config
+            config['broker_use_ssl'] = ssl_settings
+            config['redis_backend_use_ssl'] = ssl_settings
+        
+        return config
+    except Exception as e:
+        logger.error(f"Failed to configure Celery: {str(e)}")
+        raise
 
-# Initialize Celery with explicit broker and backend URLs
-celery_app = Celery('competitor_tasks')
-celery_app.config_from_object(get_celery_config())
+# Initialize Celery app
+try:
+    celery_app = Celery('competitor_tasks')
+    celery_app.config_from_object(get_celery_config())
+    logger.info("Celery app initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize Celery app: {str(e)}")
+    raise
+
+# Add startup task to verify configuration
+@celery_app.task(name='verify_config')
+def verify_config():
+    """Verify Celery configuration is working"""
+    return {
+        'status': 'ok',
+        'broker_type': 'redis',
+        'timestamp': datetime.utcnow().isoformat()
+    }
 
 # Add error handling for Redis operations
 def update_task_status(task_id: str, status: str, result=None, error=None):
