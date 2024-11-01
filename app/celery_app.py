@@ -14,49 +14,48 @@ from urllib.parse import urlparse
 # Initialize logging
 logger = logging.getLogger(__name__)
 
-def get_redis_config():
-    """Configure Redis connection with SSL if needed"""
+ef get_celery_config():
+    """Get Celery configuration with proper Redis SSL settings"""
     redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+    parsed_url = urlparse(redis_url)
     
-    if redis_url.startswith('rediss://'):
-        # Parse the Redis URL
-        parsed_url = urlparse(redis_url)
-        
-        # Configure broker URL with SSL parameters
-        broker_url = f"{redis_url}?ssl_cert_reqs=CERT_NONE"
-        
-        # Configure Celery Redis backend settings
-        backend_settings = {
+    config = {
+        'broker_url': redis_url,
+        'result_backend': redis_url,
+        'task_serializer': 'json',
+        'accept_content': ['json'],
+        'result_serializer': 'json',
+        'timezone': 'UTC',
+        'enable_utc': True,
+        'broker_connection_retry_on_startup': True,
+        'broker_connection_timeout': 10,
+    }
+    
+    if parsed_url.scheme == 'rediss':
+        ssl_config = {
+            'broker_use_ssl': {
+                'ssl_cert_reqs': ssl.CERT_NONE,
+                'ssl_keyfile': None,
+                'ssl_certfile': None,
+                'ssl_ca_certs': None,
+            },
             'redis_backend_use_ssl': {
-                'ssl_cert_reqs': ssl.CERT_NONE
+                'ssl_cert_reqs': ssl.CERT_NONE,
+                'ssl_keyfile': None,
+                'ssl_certfile': None,
+                'ssl_ca_certs': None,
             }
         }
-        
-        return broker_url, backend_settings
+        config.update(ssl_config)
     
-    return redis_url, {}
-
-# Get Redis configuration
-broker_url, backend_settings = get_redis_config()
+    return config
 
 # Initialize Celery
 celery_app = Celery('competitor_tasks')
 
 # Configure Celery
-config = {
-    'broker_url': broker_url,
-    'result_backend': broker_url,
-    'task_serializer': 'json',
-    'accept_content': ['json'],
-    'result_serializer': 'json',
-    'timezone': 'UTC',
-    'enable_utc': True,
-    'broker_connection_retry_on_startup': True,
-}
+celery_app.conf.update(get_celery_config())
 
-# Update with SSL settings if needed
-config.update(backend_settings)
-celery_app.conf.update(config)
 
 def update_task_status(task_id: str, status: str, result=None, error=None):
     """Update task status in Redis"""

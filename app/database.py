@@ -8,29 +8,48 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-def get_redis_ssl_config(url: str) -> dict:
-    """Get Redis SSL configuration based on URL"""
-    if url.startswith('rediss://'):
+def get_redis_connection_params(url: str) -> dict:
+    """Get Redis connection parameters based on URL"""
+    parsed_url = urlparse(url)
+    
+    if parsed_url.scheme == 'rediss':
         return {
-            'ssl_cert_reqs': None,  # CERT_NONE
-            'ssl': True
+            'ssl_cert_reqs': ssl.CERT_NONE,  # Changed from None to ssl.CERT_NONE
+            'decode_responses': True,
+            'retry_on_timeout': True,
+            'socket_timeout': 5,  # Added timeout settings
+            'socket_connect_timeout': 5
         }
-    return {}
+    return {
+        'decode_responses': True,
+        'retry_on_timeout': True
+    }
 
-# Initialize Redis clients with SSL support
-redis_url = settings.REDIS_URL
-ssl_config = get_redis_ssl_config(redis_url)
-
-# Sync Redis client
-redis_client = redis.from_url(redis_url, **ssl_config)
-
-# Async Redis client
-redis_async = aioredis.from_url(
-    redis_url,
-    decode_responses=True,
-    encoding="utf-8",
-    **ssl_config
-)
+# Initialize Redis clients
+try:
+    redis_url = settings.REDIS_URL
+    connection_params = get_redis_connection_params(redis_url)
+    
+    # Sync Redis client
+    redis_client = redis.from_url(
+        redis_url,
+        **connection_params
+    )
+    
+    # Async Redis client
+    redis_async = aioredis.from_url(
+        redis_url,
+        **connection_params
+    )
+    
+    # Test connections
+    redis_client.ping()
+    logger.info("Successfully initialized Redis sync client")
+    
+except Exception as e:
+    logger.error(f"Error initializing Redis: {str(e)}")
+    redis_client = None
+    redis_async = None
 
 # Initialize MongoDB client
 client = AsyncIOMotorClient(settings.MONGODB_URL)
