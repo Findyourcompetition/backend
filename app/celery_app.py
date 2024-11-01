@@ -126,7 +126,7 @@ async def store_search_results(competitors, search_id):
             try:
                 cached_logo = redis_client.get(f"logo:{competitor.website}")
                 if cached_logo:
-                    logo_url = cached_logo.decode('utf-8')
+                    logo_url = cached_logo
                 else:
                     logo_url = await fetch_logo_url(competitor.website)
                     redis_client.set(f"logo:{competitor.website}", logo_url, ex=86400)
