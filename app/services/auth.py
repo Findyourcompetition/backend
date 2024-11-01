@@ -6,8 +6,8 @@ from passlib.context import CryptContext
 from app.models.user import UserCreate, UserInDB, User, TokenData
 from app.database import get_collection
 from app.config import settings
-from bson import ObjectId
 from pydantic import EmailStr
+from app.services.token_service import verify_reset_token
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
@@ -57,3 +57,32 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     if user is None:
         raise credentials_exception
     return User(**user, id=str(user["_id"]))
+
+async def reset_password(email: EmailStr, otp: str, new_password: str):
+    """Reset user password with OTP verification."""
+    users = get_collection("users")
+    
+    # Verify the reset token
+    is_valid = await verify_reset_token(email, otp)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+    
+    # Hash the new password
+    hashed_password = pwd_context.hash(new_password)
+    
+    # Update the user's password
+    result = await users.update_one(
+        {"email": email},
+        {"$set": {"hashed_password": hashed_password}}
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    return True

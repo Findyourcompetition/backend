@@ -4,6 +4,7 @@ from typing import Optional
 class UserBase(BaseModel):
     email: EmailStr
     name: str
+    profile_picture: Optional[str] = None
 
 class UserCreate(UserBase):
     password: str
@@ -26,3 +27,9 @@ class PasswordResetRequest(BaseModel):
 
 class PasswordResetResponse(BaseModel):
     message: str
+
+class PasswordReset(BaseModel):
+    email: EmailStr
+    otp: str
+    new_password: str
+    confirm_password: str

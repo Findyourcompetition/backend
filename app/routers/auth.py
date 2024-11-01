@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
-from app.models.user import UserCreate, User, Token, PasswordResetRequest, PasswordResetResponse
+from app.models.user import UserCreate, User, Token, PasswordResetRequest, PasswordResetResponse, PasswordReset
 from app.services.auth import (
     create_user,
     authenticate_user,
     create_access_token,
     get_current_user,
+    reset_password,
 )
+from app.database import get_collection
 from app.services.email_service import send_reset_email
 from app.services.token_service import generate_reset_token
 import logging
@@ -46,18 +48,26 @@ async def forgot_password(
 ):
     """Handle forgot password requests."""
     try:
-        # Generate reset token
-        reset_token = await generate_reset_token(request.email)
+        # Check if user exists (but don't reveal this in the response)
+        users = get_collection("users")
+        user = await users.find_one({"email": request.email})
         
-        # Send email in background
-        background_tasks.add_task(
-            send_reset_email,
-            request.email,
-            reset_token
-        )
+        if user:
+            # Generate reset token
+            reset_token = await generate_reset_token(request.email)
+            
+            # Send email in background
+            background_tasks.add_task(
+                send_reset_email,
+                request.email,
+                reset_token
+            )
+            
+            logger.info(f"Password reset initiated for {request.email}")
+        else:
+            logger.info(f"Password reset attempted for non-existent email: {request.email}")
         
-        logger.info(f"Password reset initiated for {request.email}")
-        
+        # Always return the same message for security
         return PasswordResetResponse(
             message="If an account exists with this email, "
                    "you will receive password reset instructions."
@@ -68,4 +78,31 @@ async def forgot_password(
         raise HTTPException(
             status_code=500,
             detail="Error processing password reset request"
+        )
+
+@router.post("/reset-password")
+async def reset_password_endpoint(reset_data: PasswordReset):
+    """Reset user password with OTP verification."""
+    if reset_data.new_password != reset_data.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Passwords do not match"
+        )
+    
+    try:
+        await reset_password(
+            reset_data.email,
+            reset_data.otp,
+            reset_data.new_password
+        )
+        
+        logger.info(f"Password reset successful for {reset_data.email}")
+        
+        return {"message": "Password reset successful"}
+        
+    except Exception as e:
+        logger.error(f"Error in password reset: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error processing password reset"
         )

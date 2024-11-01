@@ -1,68 +1,61 @@
 # app/services/token_service.py
-import jwt
-from datetime import datetime, timedelta
+import logging
 from ..database import redis_async 
 from ..config import settings
-import logging
 
 logger = logging.getLogger(__name__)
 
 async def generate_reset_token(email: str) -> str:
-    """Generate a secure reset token."""
+    """Generate a 6-character OTP code for password reset."""
     try:
-        payload = {
-            "email": email,
-            "exp": datetime.utcnow() + timedelta(minutes=settings.RESET_TOKEN_EXPIRE_MINUTES)
-        }
+        import random
+        import string
         
-        # Generate JWT token
-        token = jwt.encode(
-            payload,
-            settings.JWT_SECRET_KEY,
-            algorithm=settings.JWT_ALGORITHM
-        )
+        # Generate 6 character code using letters and numbers
+        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
         
-        # Store token in Redis with expiration
-        redis_key = f"reset_token:{token}"
+        # Store code in Redis with expiration
+        redis_key = f"reset_token:{email}"
         try:
             await redis_async.setex(
                 redis_key,
                 settings.RESET_TOKEN_EXPIRE_MINUTES * 60,
-                email
+                code
             )
         except Exception as redis_error:
             logger.error(f"Redis error: {redis_error}")
-            raise Exception("Error storing reset token")
+            raise Exception("Error storing reset code")
         
-        return token
+        return code
         
     except Exception as e:
-        logger.error(f"Token generation error: {str(e)}")
+        logger.error(f"Code generation error: {str(e)}")
         raise
 
-async def verify_reset_token(token: str) -> str:
-    """Verify and decode the reset token."""
+async def verify_reset_token(email: str, otp: str) -> bool:
+    """Verify the OTP code for password reset."""
     try:
-        # Decode and verify the token
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=[settings.JWT_ALGORITHM]
-        )
+        # Get stored OTP from Redis
+        redis_key = f"reset_token:{email}"
+        stored_otp = await redis_async.get(redis_key)
         
-        # Check if token exists in Redis
-        redis_key = f"reset_token:{token}"
-        stored_email = await redis_async.get(redis_key)
-        
-        if not stored_email:
-            raise Exception("Invalid or expired reset token")
+        if not stored_otp:
+            logger.warning(f"No OTP found for email: {email}")
+            return False
             
-        return payload["email"]
+        # Convert bytes to string if necessary
+        if isinstance(stored_otp, bytes):
+            stored_otp = stored_otp.decode('utf-8')
+            
+        # Compare stored OTP with provided OTP
+        is_valid = stored_otp == otp
         
-    except jwt.ExpiredSignatureError:
-        raise Exception("Reset token has expired")
-    except jwt.JWTError:
-        raise Exception("Invalid reset token")
+        if is_valid:
+            # Delete the OTP after successful verification
+            await redis_async.delete(redis_key)
+            
+        return is_valid
+        
     except Exception as e:
-        logger.error(f"Token verification error: {str(e)}")
+        logger.error(f"OTP verification error: {str(e)}")
         raise

@@ -18,18 +18,17 @@ mail_config = ConnectionConfig(
 
 fastmail = FastMail(mail_config)
 
-async def send_reset_email(email: str, reset_token: str):
-    """Send password reset email using FastMail."""
-    reset_link = f"https://yourapp.com/reset-password?token={reset_token}"
-    
+async def send_reset_email(email: str, otp: str):
+    """Send password reset email with OTP using FastMail."""
     message = MessageSchema(
         subject="Password Reset Request",
         recipients=[email],
         body=f"""
-        <h2>Password Reset Request</h2>
-        <p>Click the link below to reset your password:</p>
-        <p><a href="{reset_link}">{reset_link}</a></p>
-        <p>This link will expire in {settings.RESET_TOKEN_EXPIRE_MINUTES} minutes.</p>
+        <h2>FYC - Password Reset Request</h2>
+        <p>Your password reset code is:</p>
+        <h3 style="background-color: #f5f5f5; padding: 10px; font-family: monospace; text-align: center;">{otp}</h3>
+        <p>Enter this code in the password reset form to create a new password.</p>
+        <p>This code will expire in {settings.RESET_TOKEN_EXPIRE_MINUTES} minutes.</p>
         <p>If you didn't request this reset, please ignore this email.</p>
         """,
         subtype="html"
@@ -37,7 +36,7 @@ async def send_reset_email(email: str, reset_token: str):
 
     try:
         await fastmail.send_message(message)
-        logger.info(f"Reset email sent to {email}")
+        logger.info(f"Reset email with OTP sent to {email}")
     except Exception as e:
         logger.error(f"Error sending email: {str(e)}")
         raise
