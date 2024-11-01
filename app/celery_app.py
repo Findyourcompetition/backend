@@ -10,13 +10,14 @@ from app.database import redis_client, get_collection
 from app.utils.logo_fetcher import fetch_logo_url
 import ssl
 from urllib.parse import urlparse
+from app.config import settings
 
 # Initialize logging
 logger = logging.getLogger(__name__)
 
 def get_celery_config():
     """Get Celery configuration with proper Redis SSL settings"""
-    redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+    redis_url = settings.REDIS_URL
     parsed_url = urlparse(redis_url)
     
     config = {
@@ -28,9 +29,14 @@ def get_celery_config():
         'timezone': 'UTC',
         'enable_utc': True,
         'broker_connection_retry_on_startup': True,
-        'broker_connection_timeout': 10,
+        'broker_connection_timeout': 30,
+        'broker_connection_max_retries': 10,
+        'broker_pool_limit': None,  # Disable connection pooling for Heroku
+        'worker_prefetch_multiplier': 1,  # Prevent worker from prefetching too many tasks
+        'worker_max_tasks_per_child': 50,  # Restart workers periodically to prevent memory leaks
     }
     
+    # Add SSL configuration for Redis if using SSL (rediss://)
     if parsed_url.scheme == 'rediss':
         ssl_config = {
             'broker_use_ssl': {
@@ -50,15 +56,16 @@ def get_celery_config():
     
     return config
 
-# Initialize Celery
+# Initialize Celery with explicit broker and backend URLs
 celery_app = Celery('competitor_tasks')
+celery_app.config_from_object(get_celery_config())
 
-# Configure Celery
-celery_app.conf.update(get_celery_config())
-
-
+# Add error handling for Redis operations
 def update_task_status(task_id: str, status: str, result=None, error=None):
-    """Update task status in Redis"""
+    """Update task status in Redis with retry logic"""
+    max_retries = 3
+    retry_delay = 1  # seconds
+    
     task_data = {
         "status": status,
         "updated_at": str(datetime.utcnow())
@@ -68,12 +75,21 @@ def update_task_status(task_id: str, status: str, result=None, error=None):
         task_data["result"] = result
     if error:
         task_data["error"] = error
-        
-    redis_client.set(
-        f"task:{task_id}",
-        json.dumps(task_data),
-        ex=3600  # 1 hour expiration
-    )
+    
+    for attempt in range(max_retries):
+        try:
+            redis_client.set(
+                f"task:{task_id}",
+                json.dumps(task_data),
+                ex=3600  # 1 hour expiration
+            )
+            return
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error(f"Failed to update task status after {max_retries} attempts: {str(e)}")
+                raise
+            asyncio.sleep(retry_delay * (attempt + 1))
+
 
 async def store_search_results(competitors, search_id):
     """Store search results with logos"""

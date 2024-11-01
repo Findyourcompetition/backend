@@ -9,48 +9,29 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-def get_redis_connection_params(url: str) -> dict:
-    """Get Redis connection parameters based on URL"""
-    parsed_url = urlparse(url)
-    
-    if parsed_url.scheme == 'rediss':
-        return {
-            'ssl_cert_reqs': ssl.CERT_NONE,  # Changed from None to ssl.CERT_NONE
-            'decode_responses': True,
-            'retry_on_timeout': True,
-            'socket_timeout': 5,  # Added timeout settings
-            'socket_connect_timeout': 5
-        }
-    return {
-        'decode_responses': True,
-        'retry_on_timeout': True
-    }
-
 # Initialize Redis clients
 try:
     redis_url = settings.REDIS_URL
-    connection_params = get_redis_connection_params(redis_url)
     
     # Sync Redis client
     redis_client = redis.from_url(
         redis_url,
-        **connection_params
+        decode_responses=True,
+        ssl_cert_reqs=None
     )
     
     # Async Redis client
     redis_async = aioredis.from_url(
         redis_url,
-        **connection_params
+        decode_responses=True,
+        ssl_cert_reqs=None
     )
-    
-    # Test connections
-    redis_client.ping()
-    logger.info("Successfully initialized Redis sync client")
-    
+
 except Exception as e:
-    logger.error(f"Error initializing Redis: {str(e)}")
+    logger.error(f"Redis initialization failed: {str(e)}")
     redis_client = None
     redis_async = None
+
 
 # Initialize MongoDB client
 client = AsyncIOMotorClient(settings.MONGODB_URL)
