@@ -117,18 +117,20 @@ async def store_search_results(competitors, search_id):
     processed_competitors = []
     competitor_collection = get_collection("competitors")
     
-    # Process competitors sequentially instead of using gather
+    # Get current event loop
+    loop = asyncio.get_event_loop()
+    
     for competitor in competitors:
         try:
             competitor_dict = competitor.dict(by_alias=True)
             competitor_dict['search_id'] = search_id
             
-            # Handle logo
+            # Handle logo using the same event loop
             if competitor.website:
                 try:
                     cached_logo = redis_client.get(f"logo:{competitor.website}")
                     if cached_logo:
-                        logo_url = cached_logo
+                        logo_url = cached_logo.decode() if isinstance(cached_logo, bytes) else cached_logo
                     else:
                         logo_url = await fetch_logo_url(competitor.website)
                         if logo_url:
@@ -191,23 +193,22 @@ async def _process_search(task_type: str, params: dict, task_id: str):
 @celery_app.task(name='process_competitor_search')
 def process_competitor_search(task_type: str, params: dict, task_id: str):
     """Celery task to process competitor searches"""
+    # Create and set event loop at the start
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
-    try:
-        # Run everything in the same loop
-        result = loop.run_until_complete(_process_search(task_type, params, task_id))
-        return result
-    except Exception as exc:
-        logger.error(f"Task failed: {exc}")
-        update_task_status(task_id, "failed", error=str(exc))
-        raise
-    finally:
-        # Don't close the loop until all tasks are done
+    async def run_task():
         try:
-            pending = asyncio.all_tasks(loop)
-            loop.run_until_complete(asyncio.gather(*pending))
-        except Exception as e:
-            logger.error(f"Error cleaning up tasks: {e}")
-        finally:
+            return await _process_search(task_type, params, task_id)
+        except Exception as exc:
+            logger.error(f"Task failed: {exc}")
+            update_task_status(task_id, "failed", error=str(exc))
+            raise
+    
+    try:
+        return loop.run_until_complete(run_task())
+    finally:
+        # Ensure the loop is closed only after everything is done
+        if not loop.is_closed():
+            loop.run_until_complete(loop.shutdown_asyncgens())
             loop.close()
