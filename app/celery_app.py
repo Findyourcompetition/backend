@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 # Initialize logging
 logger = logging.getLogger(__name__)
 
-ef get_celery_config():
+def get_celery_config():
     """Get Celery configuration with proper Redis SSL settings"""
     redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
     parsed_url = urlparse(redis_url)
