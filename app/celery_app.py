@@ -134,13 +134,13 @@ async def store_search_results(competitors, search_id):
                         if logo_url:
                             redis_client.set(f"logo:{competitor.website}", logo_url, ex=86400)
                         else:
-                            logo_url = "/placeholder-logo.png"
+                            logo_url = "https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.pngegg.com%2Fen%2Fpng-yxwub&psig=AOvVaw3-RPAs2jGgHmYCvXTlUUX0&ust=1730517558841000&source=images&cd=vfe&opi=89978449&ved=0CBQQjRxqFwoTCMDvuraWuokDFQAAAAAdAAAAABAE"
                     competitor_dict['logo'] = logo_url
                 except Exception as e:
                     logger.error(f"Error fetching logo for {competitor.website}: {str(e)}")
-                    competitor_dict['logo'] = "/placeholder-logo.png"
+                    competitor_dict['logo'] = "https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.pngegg.com%2Fen%2Fpng-yxwub&psig=AOvVaw3-RPAs2jGgHmYCvXTlUUX0&ust=1730517558841000&source=images&cd=vfe&opi=89978449&ved=0CBQQjRxqFwoTCMDvuraWuokDFQAAAAAdAAAAABAE"
             else:
-                competitor_dict['logo'] = "/placeholder-logo.png"
+                competitor_dict['logo'] = "https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.pngegg.com%2Fen%2Fpng-yxwub&psig=AOvVaw3-RPAs2jGgHmYCvXTlUUX0&ust=1730517558841000&source=images&cd=vfe&opi=89978449&ved=0CBQQjRxqFwoTCMDvuraWuokDFQAAAAAdAAAAABAE"
 
             # Store in database
             unique_id = str(uuid4())
