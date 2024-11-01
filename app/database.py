@@ -8,45 +8,33 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Get Redis URL with fallback for development
-def get_redis_url() -> str:
-    redis_url = os.environ.get("REDIS_URL")
-    if redis_url:
-        # Production Redis URL with SSL parameters
-        return redis_url + "?ssl_cert_reqs=none"
-    
-    # Local development fallback
-    return "redis://localhost:6379"
+def get_redis_ssl_config(url: str) -> dict:
+    """Get Redis SSL configuration based on URL"""
+    if url.startswith('rediss://'):
+        return {
+            'ssl_cert_reqs': None,  # CERT_NONE
+            'ssl': True
+        }
+    return {}
 
-# Initialize Redis clients with error handling
-def init_redis_clients() -> tuple[Optional[redis.Redis], Optional[aioredis.Redis]]:
-    try:
-        redis_url = get_redis_url()
-        # Sync Redis client
-        sync_client = redis.Redis.from_url(redis_url)
-        # Test connection
-        sync_client.ping()
-        
-        # Async Redis client
-        async_client = aioredis.from_url(
-            redis_url,
-            decode_responses=True,
-            encoding="utf-8"
-        )
-        
-        logger.info(f"Successfully connected to Redis at {redis_url}")
-        return sync_client, async_client
-    except Exception as e:
-        logger.error(f"Error connecting to Redis: {str(e)}")
-        logger.warning("Running without Redis - some features may be limited")
-        return None, None
+# Initialize Redis clients with SSL support
+redis_url = settings.REDIS_URL
+ssl_config = get_redis_ssl_config(redis_url)
+
+# Sync Redis client
+redis_client = redis.from_url(redis_url, **ssl_config)
+
+# Async Redis client
+redis_async = aioredis.from_url(
+    redis_url,
+    decode_responses=True,
+    encoding="utf-8",
+    **ssl_config
+)
 
 # Initialize MongoDB client
 client = AsyncIOMotorClient(settings.MONGODB_URL)
 db = client[settings.DATABASE_NAME]
-
-# Initialize Redis clients
-redis_client, redis_async = init_redis_clients()
 
 async def init_db():
     try:

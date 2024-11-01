@@ -8,23 +8,55 @@ import logging
 from app.services.ai_insights import find_competitors_ai, lookup_competitor_ai
 from app.database import redis_client, get_collection
 from app.utils.logo_fetcher import fetch_logo_url
+import ssl
+from urllib.parse import urlparse
 
 # Initialize logging
 logger = logging.getLogger(__name__)
+
+def get_redis_config():
+    """Configure Redis connection with SSL if needed"""
+    redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+    
+    if redis_url.startswith('rediss://'):
+        # Parse the Redis URL
+        parsed_url = urlparse(redis_url)
+        
+        # Configure broker URL with SSL parameters
+        broker_url = f"{redis_url}?ssl_cert_reqs=CERT_NONE"
+        
+        # Configure Celery Redis backend settings
+        backend_settings = {
+            'redis_backend_use_ssl': {
+                'ssl_cert_reqs': ssl.CERT_NONE
+            }
+        }
+        
+        return broker_url, backend_settings
+    
+    return redis_url, {}
+
+# Get Redis configuration
+broker_url, backend_settings = get_redis_config()
 
 # Initialize Celery
 celery_app = Celery('competitor_tasks')
 
 # Configure Celery
-celery_app.conf.update(
-    broker_url=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
-    result_backend=os.getenv('REDIS_URL', 'redis://localhost:6379/0'),
-    task_serializer='json',
-    accept_content=['json'],
-    result_serializer='json',
-    timezone='UTC',
-    enable_utc=True,
-)
+config = {
+    'broker_url': broker_url,
+    'result_backend': broker_url,
+    'task_serializer': 'json',
+    'accept_content': ['json'],
+    'result_serializer': 'json',
+    'timezone': 'UTC',
+    'enable_utc': True,
+    'broker_connection_retry_on_startup': True,
+}
+
+# Update with SSL settings if needed
+config.update(backend_settings)
+celery_app.conf.update(config)
 
 def update_task_status(task_id: str, status: str, result=None, error=None):
     """Update task status in Redis"""
