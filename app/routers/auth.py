@@ -1,21 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from fastapi.security import OAuth2PasswordRequestForm
-from app.models.user import UserCreate, User, Token, PasswordResetRequest, PasswordResetResponse, PasswordReset
-from app.services.auth import (
-    create_user,
-    authenticate_user,
-    create_access_token,
-    get_current_user,
-    reset_password,
-)
-from app.database import get_collection
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from app.services.email_service import send_reset_email
 from app.services.token_service import generate_reset_token
 import logging
-
+from app.models.user import (
+    UserCreate, User, Token, PasswordResetRequest, 
+    PasswordResetResponse, PasswordReset, GoogleAuthData
+)
+from app.services.auth import (
+    create_user, authenticate_user, create_access_token,
+    get_current_user, reset_password, authenticate_google_user
+)
+from app.database import get_collection, redis_client
+from app.config import settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 @router.post("/register")
@@ -24,6 +25,30 @@ async def register(user: UserCreate):
     print(new_user)
     access_token = create_access_token(data={"sub": new_user.email})
     return {"access_token": access_token, "token_type": "bearer", "username": new_user.email, "id": new_user.id}
+
+@router.post("/google/login", response_model=Token)
+async def google_login(google_data: GoogleAuthData):
+    """Handle Google Sign-In"""
+    try:
+        user = await authenticate_google_user(google_data)
+        access_token = create_access_token(
+            data={
+                "sub": user.email,
+                "auth_provider": "google"
+            }
+        )
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "username": user.email,
+            "id": user.id
+        }
+    except Exception as e:
+        logger.error(f"Google login error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not handle Google login"
+        )
 
 @router.post("/token")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
@@ -40,6 +65,25 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 @router.get("/me", response_model=User)
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+@router.post("/logout")
+async def logout(token: str = Depends(oauth2_scheme)):
+    """Handle logout for both traditional and Google auth"""
+    try:
+        # Add token to blacklist
+        redis_key = f"blacklist_token:{token}"
+        redis_client.set(
+            redis_key,
+            "true",
+            ex=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        )
+        return {"message": "Successfully logged out"}
+    except Exception as e:
+        logger.error(f"Logout error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error during logout"
+        )
 
 @router.post("/forgot-password", response_model=PasswordResetResponse)
 async def forgot_password(

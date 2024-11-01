@@ -3,11 +3,12 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from app.models.user import UserCreate, UserInDB, User, TokenData
 from app.database import get_collection
 from app.config import settings
 from pydantic import EmailStr
 from app.services.token_service import verify_reset_token
+from app.models.user import UserCreate, UserInDB, User, TokenData, GoogleAuthData
+
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
@@ -17,11 +18,44 @@ async def create_user(user: UserCreate):
     existing_user = await users.find_one({"email": user.email})
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
-    hashed_password = pwd_context.hash(user.password)
-    user_in_db = UserInDB(**user.dict(), hashed_password=hashed_password)
-    result = await users.insert_one(user_in_db.dict())
+    
+    user_dict = user.model_dump()    
+    # Handle password for email users
+    if user.auth_provider == "email":
+        if not user.password:
+            raise HTTPException(status_code=400, detail="Password required for email registration")
+        hashed_password = pwd_context.hash(user.password)
+        user_dict["hashed_password"] = hashed_password
+    
+    result = await users.insert_one(user_dict)
     created_user = await users.find_one({"_id": result.inserted_id})
     return User(**created_user, id=str(created_user["_id"]))
+
+async def authenticate_google_user(google_data: GoogleAuthData) -> User:
+    """Authenticate or create user with Google data"""
+    users = get_collection("users")
+    existing_user = await users.find_one({"email": google_data.email})
+    
+    if existing_user:
+        # Update existing user's Google info
+        await users.update_one(
+            {"email": google_data.email},
+            {"$set": {
+                "name": google_data.name,
+                "profile_picture": google_data.image,
+                "auth_provider": "google"
+            }}
+        )
+        return User(**existing_user, id=str(existing_user["_id"]))
+    
+    # Create new user
+    new_user = UserCreate(
+        email=google_data.email,
+        name=google_data.name,
+        profile_picture=google_data.image,
+        auth_provider="google"
+    )
+    return await create_user(new_user)
 
 async def authenticate_user(email: EmailStr, password: str):
     users = get_collection("users")
