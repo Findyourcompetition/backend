@@ -117,8 +117,8 @@ async def store_search_results(competitors, search_id):
     processed_competitors = []
     competitor_collection = get_collection("competitors")
     
-    # Process all competitors in parallel
-    async def process_competitor(competitor):
+    # Process competitors sequentially instead of using gather
+    for competitor in competitors:
         try:
             competitor_dict = competitor.dict(by_alias=True)
             competitor_dict['search_id'] = search_id
@@ -134,13 +134,13 @@ async def store_search_results(competitors, search_id):
                         if logo_url:
                             redis_client.set(f"logo:{competitor.website}", logo_url, ex=86400)
                         else:
-                            logo_url = "https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.pngegg.com%2Fen%2Fpng-yxwub&psig=AOvVaw3-RPAs2jGgHmYCvXTlUUX0&ust=1730517558841000&source=images&cd=vfe&opi=89978449&ved=0CBQQjRxqFwoTCMDvuraWuokDFQAAAAAdAAAAABAE"
+                            logo_url = "default_logo_url"
                     competitor_dict['logo'] = logo_url
                 except Exception as e:
                     logger.error(f"Error fetching logo for {competitor.website}: {str(e)}")
-                    competitor_dict['logo'] = "https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.pngegg.com%2Fen%2Fpng-yxwub&psig=AOvVaw3-RPAs2jGgHmYCvXTlUUX0&ust=1730517558841000&source=images&cd=vfe&opi=89978449&ved=0CBQQjRxqFwoTCMDvuraWuokDFQAAAAAdAAAAABAE"
+                    competitor_dict['logo'] = "default_logo_url"
             else:
-                competitor_dict['logo'] = "https://www.google.com/url?sa=i&url=https%3A%2F%2Fwww.pngegg.com%2Fen%2Fpng-yxwub&psig=AOvVaw3-RPAs2jGgHmYCvXTlUUX0&ust=1730517558841000&source=images&cd=vfe&opi=89978449&ved=0CBQQjRxqFwoTCMDvuraWuokDFQAAAAAdAAAAABAE"
+                competitor_dict['logo'] = "default_logo_url"
 
             # Store in database
             unique_id = str(uuid4())
@@ -151,19 +151,10 @@ async def store_search_results(competitors, search_id):
                 {"$set": competitor_dict},
                 upsert=True
             )
-            return competitor_dict
+            processed_competitors.append(competitor_dict)
         except Exception as e:
             logger.error(f"Error processing competitor: {str(e)}")
-            return None
-
-    # Process all competitors concurrently
-    results = await asyncio.gather(
-        *[process_competitor(competitor) for competitor in competitors],
-        return_exceptions=False
-    )
-    
-    # Filter out None results from failed processing
-    processed_competitors = [r for r in results if r is not None]
+            continue
     
     return {
         "competitors": processed_competitors,
