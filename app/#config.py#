@@ -5,7 +5,6 @@ import os
 class Settings(BaseSettings):
     # Existing settings
     MONGODB_URL: str = os.environ.get("MONGODB_URL", "mongodb://localhost:27017/fyc")
-    REDIS_URL: str = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     DATABASE_NAME: str = "fyc_prod_db"
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"

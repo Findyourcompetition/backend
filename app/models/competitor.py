@@ -37,7 +37,7 @@ class CompetitorBaseList(CompetitorBase):
     competitors: list[CompetitorBase] = Field(description="The list of competitors from AI")
 
 class Competitor(CompetitorBase):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+#    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: Optional[str] = None
 
 class CompetitorList(PaginatedResponse[Competitor]):

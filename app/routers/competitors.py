@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Query
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+from app.services.background_tasks import create_background_task, get_task_status, TaskStatus
 from app.models.competitor import (
     CompetitorCreate,
     CompetitorUpdate,
@@ -8,9 +9,8 @@ from app.models.competitor import (
     CompetitorSearch,
     CompetitorSearchAi,
     CompetitorInsights,
-    SingleCompetitorSearchResult
 )
-from app.database import redis_client, get_collection
+from app.database import get_collection
 from app.models.user import User
 from app.services.auth import get_current_user
 from app.services.competitor import (
@@ -20,15 +20,12 @@ from app.services.competitor import (
     delete_competitor,
     search_competitors,
     insert_competitors,
-    handle_competitor_search
+    get_existing_search_results
 )
 from app.services.ai_insights import (
     generate_competitor_insights,
-    find_competitors_ai,
-    lookup_competitor_ai,
 )
 from app.utils.logo_fetcher import (
-    update_logo_url,
     fetch_logo_url,
     update_competitor_logo_in_db,
 )
@@ -70,89 +67,69 @@ async def search_for_competitors(
 ):
     return await search_competitors(search.business_type, search.location)
 
-@router.post("/lookup", response_model=SingleCompetitorSearchResult)
-async def lookup_competitor(
-        name_or_url: str,
-        background_tasks: BackgroundTasks,
-        offset: int = Query(default=0, ge=0),
-        limit: int = Query(default=6, ge=1),
-        search_id: Optional[str] = None 
-):
-    competitors, new_search_id = await handle_competitor_search(
-        search_function=lookup_competitor_ai,
-        search_params=(name_or_url,),
-        background_tasks=background_tasks,
-        offset=offset,
-        limit=limit,
-        search_id=search_id
-    )
-    paginated_competitors = competitors[offset:offset + limit]
-    return SingleCompetitorSearchResult(
-        competitors=paginated_competitors,
-        total=len(competitors),
-        offset=offset,
-        limit=limit,
-        search_id=new_search_id
-    )
 
-@router.post("/find", response_model=CompetitorList)
+@router.post("/find", response_model=Dict[str, Any])
 async def find_competitors_with_ai(
-        find: CompetitorSearchAi,
-        background_tasks: BackgroundTasks,
-        offset: int = Query(default=0, ge=0),
-        limit: int = Query(default=6, ge=1),
-        search_id: Optional[str] = None
+    find: CompetitorSearchAi,
+    search_id: Optional[str] = None,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=6, ge=1)
 ):
-    competitors, new_search_id = await handle_competitor_search(
-        search_function=find_competitors_ai,
-        search_params=(find.business_description, find.location),
-        background_tasks=background_tasks,
-        offset=offset,
-        limit=limit,
-        search_id=search_id
-    )
-
-    paginated_competitors = competitors[offset:offset + limit]
+    """Endpoint for AI-powered competitor search with background processing"""
+    if search_id:
+        return await get_existing_search_results(search_id, offset, limit)
     
-    return CompetitorList(
-        competitors=paginated_competitors,
-        total=len(competitors),
-        offset=offset,
-        limit=limit,
-        search_id=new_search_id
-    )
+    # Create a background task for the search
+    task_id = await create_background_task("competitor_search", {
+        "business_description": find.business_description,
+        "location": find.location
+    })
+    
+    return {
+        "task_id": task_id,
+        "status": TaskStatus.PENDING,
+        "message": "Your search is being processed"
+    }
 
-@router.get("/competitors/logos")
-async def get_competitors_with_logos(
-        search_id: str = Query(..., description="The search ID to fetch competitors for")
+@router.post("/lookup", response_model=Dict[str, Any])
+async def lookup_competitor(
+    name_or_url: str = Query(..., description="Company name or website URL"),
+    search_id: Optional[str] = None,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=6, ge=1)
 ):
-    competitors_collection = get_collection("competitors")
-    competitors = await competitors_collection.find(
-        {"search_id": search_id}
-    ).to_list(None)
+    """Endpoint for looking up a specific competitor with background processing"""
+    if search_id:
+        return await get_existing_search_results(search_id, offset, limit)
     
-    if not competitors:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No competitors found for search_id: {search_id}"
-        )
+    task_id = await create_background_task("competitor_lookup", {
+        "name_or_url": name_or_url
+    })
     
-    # Update logos from Redis if available
-    for competitor in competitors:
-        if competitor.get('website'):
-            cached_logo = redis_client.get(f"logo:{competitor['website']}")
-            if cached_logo:
-                logo_url = cached_logo.decode('utf-8')
-                if competitor.get('logo') != logo_url:
-                    competitor['logo'] = logo_url
-                    # Update in database
-                    await competitors_collection.update_one(
-                        {"_id": competitor["_id"]},
-                        {"$set": {"logo": logo_url}}
-                    )
+    return {
+        "task_id": task_id,
+        "status": TaskStatus.PENDING,
+        "message": "Your lookup request is being processed"
+    }
 
-    return {"total": len(competitors), "competitors": competitors}
-
+@router.get("/search/status/{task_id}")
+async def get_search_status(task_id: str):
+    """Check the status of a search task"""
+    task_data = await get_task_status(task_id)
+    if not task_data:
+        raise HTTPException(status_code=404, detail="Task not found")
+    response = {
+        "status": task_data["status"],
+        "created_at": task_data["updated_at"]
+    }
+    
+    if task_data["status"] == TaskStatus.COMPLETED:
+        response["result"] = task_data["result"]
+        response["search_id"] = task_data["result"]["search_id"]
+    elif task_data["status"] == TaskStatus.FAILED:
+        response["error"] = task_data["error"]
+    
+    return response
 
 @router.get("/{competitor_id}/insights", response_model=CompetitorInsights)
 async def get_competitor_insights(

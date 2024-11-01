@@ -27,7 +27,7 @@ def send_openai_request(prompt: str) -> str:
     return content
 
 async def find_competitors_openai(prompt: str) -> CompetitorBaseList:
-    print("Step 3: AI engine running")
+    print("AI engine running (find endpoint)")
     response = openai_client.chat.completions.create(
         model="gpt-4o",
         messages=[
@@ -42,6 +42,7 @@ async def find_competitors_openai(prompt: str) -> CompetitorBaseList:
 
 
 async def lookup_competitor_openai(prompt: str) -> SingleCompetitorSearchResult:
+    print("AI engine running (find endpoint)")
     response = openai_client.chat.completions.create(
         model="gpt-4o",
         messages=[
@@ -52,5 +53,4 @@ async def lookup_competitor_openai(prompt: str) -> SingleCompetitorSearchResult:
         temperature=0.1,
         max_tokens=4060,
     )
-    print(f"The direct response: \n\n{response}")
     return response
