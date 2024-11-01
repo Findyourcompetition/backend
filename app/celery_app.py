@@ -141,12 +141,16 @@ async def store_search_results(competitors, search_id):
         unique_id = str(uuid4())
         competitor_dict['_id'] = unique_id
         
-        await competitor_collection.update_one(
-            {"name": competitor.name, "search_id": search_id},
-            {"$set": competitor_dict},
-            upsert=True
-        )
-        processed_competitors.append(competitor_dict)
+        try:
+            await competitor_collection.update_one(
+                {"name": competitor.name, "search_id": search_id},
+                {"$set": competitor_dict},
+                upsert=True
+            )
+            processed_competitors.append(competitor_dict)
+        except Exception as e:
+            logger.error(f"Error storing competitor: {str(e)}")
+            continue
     
     return {
         "competitors": processed_competitors,
@@ -185,14 +189,20 @@ async def _process_search(task_type: str, params: dict, task_id: str):
         update_task_status(task_id, "failed", error=str(e))
         raise
 
+def run_async(coro):
+    """Helper function to run async code in sync context"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
 @celery_app.task(name='process_competitor_search')
 def process_competitor_search(task_type: str, params: dict, task_id: str):
     """Celery task to process competitor searches"""
     try:
-        # Create new event loop for async operations
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        return loop.run_until_complete(_process_search(task_type, params, task_id))
+        return run_async(_process_search(task_type, params, task_id))
     except Exception as exc:
         logger.error(f"Task failed: {exc}")
         update_task_status(task_id, "failed", error=str(exc))
