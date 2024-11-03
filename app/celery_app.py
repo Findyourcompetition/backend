@@ -11,9 +11,20 @@ from app.utils.logo_fetcher import fetch_logo_url
 import ssl
 from urllib.parse import urlparse
 from app.config import settings
+from concurrent.futures import ThreadPoolExecutor
 
 # Initialize logging
 logger = logging.getLogger(__name__)
+
+# Global event loop policy
+asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+
+# Create a global thread pool executor
+thread_pool = ThreadPoolExecutor(max_workers=3)
+
+def run_in_executor(func, *args):
+    """Run a function in the thread pool"""
+    return thread_pool.submit(func, *args).result()
 
 def get_redis_url():
     """Get Redis URL from environment with fallback"""
@@ -160,27 +171,29 @@ def process_competitor_search(task_type: str, params: dict, task_id: str):
     try:
         update_task_status(task_id, "processing")
         
-        # Single async operation for getting competitors
-        def run_async(coro):
+        # Run async operations in a dedicated thread
+        def run_async_task():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            
             try:
-                return loop.run_until_complete(coro)
+                if task_type == "competitor_search":
+                    competitors = loop.run_until_complete(find_competitors_ai(
+                        params["business_description"],
+                        params["location"]
+                    ))
+                else:
+                    competitors = loop.run_until_complete(lookup_competitor_ai(
+                        params["name_or_url"]
+                    ))
+                return competitors
             finally:
                 loop.close()
         
-        # Get competitors (only async operation)
-        if task_type == "competitor_search":
-            competitors = run_async(find_competitors_ai(
-                params["business_description"],
-                params["location"]
-            ))
-        else:  # lookup
-            competitors = run_async(lookup_competitor_ai(
-                params["name_or_url"]
-            ))
+        # Run the async operation in the thread pool
+        competitors = run_in_executor(run_async_task)
         
-        # Process and store results synchronously
+        # Process results synchronously
         result = store_search_results_sync(competitors, search_id)
         update_task_status(task_id, "completed", result=result)
         return result
