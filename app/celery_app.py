@@ -139,13 +139,13 @@ def store_search_results_sync(competitors, search_id):
                         logo_url = cached_logo.decode() if isinstance(cached_logo, bytes) else cached_logo
                     else:
                         # Synchronous fallback for logo
-                        logo_url = "default_logo_url"
+                        logo_url = run_in_executor(fetch_logo_url, competitor.website)
                     competitor_dict['logo'] = logo_url
                 except Exception as e:
                     logger.error(f"Error fetching logo for {competitor.website}: {str(e)}")
                     competitor_dict['logo'] = "default_logo_url"
             else:
-                competitor_dict['logo'] = "default_logo_url"
+                competitor_dict['logo'] = run_in_executor(fetch_logo_url, competitor.website)
 
             unique_id = str(uuid4())
             competitor_dict['_id'] = unique_id
