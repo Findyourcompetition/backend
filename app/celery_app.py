@@ -7,7 +7,7 @@ from uuid import uuid4
 import logging
 from app.services.ai_insights import find_competitors_ai, lookup_competitor_ai
 from app.database import redis_client, get_collection
-from app.utils.logo_fetcher import fetch_logo_url
+from app.utils.logo_fetcher import fetch_logo_url_sync
 import ssl
 from urllib.parse import urlparse
 from app.config import settings
@@ -138,19 +138,20 @@ def store_search_results_sync(competitors, search_id):
                     if cached_logo:
                         logo_url = cached_logo.decode() if isinstance(cached_logo, bytes) else cached_logo
                     else:
-                        # Synchronous fallback for logo
-                        logo_url = run_in_executor(fetch_logo_url, competitor.website)
+                        # Use synchronous logo fetcher
+                        logo_url = fetch_logo_url_sync(competitor.website)
+                        if logo_url:
+                            redis_client.set(f"logo:{competitor.website}", logo_url, ex=86400)
                     competitor_dict['logo'] = logo_url
                 except Exception as e:
                     logger.error(f"Error fetching logo for {competitor.website}: {str(e)}")
                     competitor_dict['logo'] = "default_logo_url"
             else:
-                competitor_dict['logo'] = run_in_executor(fetch_logo_url, competitor.website)
+                competitor_dict['logo'] = "default_logo_url"
 
             unique_id = str(uuid4())
             competitor_dict['_id'] = unique_id
             
-            # Synchronous insert
             competitor_collection.insert_one(competitor_dict)
             processed_competitors.append(competitor_dict)
         except Exception as e:
